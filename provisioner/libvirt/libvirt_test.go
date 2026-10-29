@@ -42,6 +42,9 @@ func TestRenderDomainXML(t *testing.T) {
 				if !strings.Contains(xmlStr, "<source network='default'/>") {
 					t.Error("missing network")
 				}
+				if strings.Contains(xmlStr, "<tpm") {
+					t.Error("unexpected TPM")
+				}
 			},
 		},
 		{
@@ -53,6 +56,9 @@ func TestRenderDomainXML(t *testing.T) {
 			check: func(t *testing.T, xmlStr string) {
 				if !strings.Contains(xmlStr, "<vcpu>32</vcpu>") {
 					t.Error("expected 32 vcpus")
+				}
+				if !strings.Contains(xmlStr, "<topology sockets='1' cores='32' threads='1'/>") {
+					t.Error("expected 32 cores on one processor")
 				}
 				if !strings.Contains(xmlStr, "<memory unit='MiB'>65536</memory>") {
 					t.Error("expected 65536 MiB memory")
@@ -74,6 +80,54 @@ func TestRenderDomainXML(t *testing.T) {
 				}
 				if !strings.Contains(xmlStr, "<memory unit='MiB'>512</memory>") {
 					t.Error("expected 512 MiB memory")
+				}
+			},
+		},
+		{
+			name:    "tpm",
+			vmName:  "with-tpm",
+			overlay: "/tmp/with-tpm.qcow2",
+			img:     &outrunner.LibvirtImage{CPUs: 4, MemoryMB: 8192, TPM: true},
+			network: "default",
+			check: func(t *testing.T, xmlStr string) {
+				if !strings.Contains(xmlStr, "<backend type='emulator' version='2.0'/>") {
+					t.Error("missing TPM emulator")
+				}
+			},
+		},
+		{
+			name:    "default firmware",
+			vmName:  "autoselect",
+			overlay: "/tmp/autoselect.qcow2",
+			img:     &outrunner.LibvirtImage{CPUs: 4, MemoryMB: 8192},
+			network: "default",
+			check: func(t *testing.T, xmlStr string) {
+				if !strings.Contains(xmlStr, "firmware='efi'") {
+					t.Error("expected firmware autoselection by default")
+				}
+			},
+		},
+		{
+			name:    "explicit firmware",
+			vmName:  "testsigning",
+			overlay: "/tmp/testsigning.qcow2",
+			img: &outrunner.LibvirtImage{
+				CPUs: 4, MemoryMB: 8192,
+				Firmware: &outrunner.LibvirtFirmware{
+					Path:     "/usr/share/OVMF/OVMF_CODE_4M.fd",
+					VarsPath: "/usr/share/OVMF/OVMF_VARS_4M.fd",
+				},
+			},
+			network: "default",
+			check: func(t *testing.T, xmlStr string) {
+				if strings.Contains(xmlStr, "firmware='efi'") {
+					t.Error("explicit firmware must disable autoselection")
+				}
+				if !strings.Contains(xmlStr, "<loader readonly='yes' type='pflash'>/usr/share/OVMF/OVMF_CODE_4M.fd</loader>") {
+					t.Error("missing loader")
+				}
+				if !strings.Contains(xmlStr, "<nvram template='/usr/share/OVMF/OVMF_VARS_4M.fd'>/tmp/testsigning.fd</nvram>") {
+					t.Error("missing nvram beside the overlay")
 				}
 			},
 		},
