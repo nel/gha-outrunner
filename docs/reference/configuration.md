@@ -29,6 +29,9 @@ runners:
       memory: <int>                  # Default: 8192 (MiB)
       mount:                         # Optional virtiofs host directory share.
         source: <string>             # Host path. Tag is derived from the basename.
+      firmware:                      # Optional. Default: libvirt picks UEFI firmware.
+        path: <string>               # UEFI firmware image.
+        vars_path: <string>          # UEFI variables template, copied per VM.
       tpm: <bool>                    # Default: false
     tart:                            # Use Tart backend.
       image: <string>                # OCI image URL or local VM name.
@@ -147,6 +150,7 @@ Provisions a KVM/QEMU virtual machine per job using a copy-on-write overlay.
 | `cpus` | int | `4` | Number of vCPUs allocated to the VM. The guest sees one processor with that many cores: Windows 10 and 11 use at most two processors, so showing each vCPU as a separate processor would leave the rest unused. |
 | `memory` | int | `8192` | Memory in MiB allocated to the VM. |
 | `mount` | object | (none) | Optional virtiofs host directory share. See below. |
+| `firmware` | object | (none) | Optional UEFI firmware selection. See below. |
 | `tpm` | bool | `false` | Attach an emulated TPM 2.0 to each VM. The host needs `swtpm`. |
 
 **`mount` fields:**
@@ -156,6 +160,15 @@ Provisions a KVM/QEMU virtual machine per job using a copy-on-write overlay.
 | `source` | string | (required) | Absolute path on the host to share into the VM. The virtiofs tag is derived from the directory basename. |
 
 The share is exposed via virtiofs. On Windows guests, `VirtioFsSvc` mounts it automatically as a drive letter (Z: by default, counting down). Requires WinFsp (`choco install -y winfsp`) and `VirtioFsSvc` set to auto-start (`Set-Service -Name VirtioFsSvc -StartupType Automatic`). `virtiofsd` must be installed on the host (`apt install virtiofsd`).
+
+**`firmware` fields:**
+
+By default libvirt picks the UEFI firmware itself and prefers Secure Boot builds. Set `firmware` to choose the firmware explicitly, for example to boot with Secure Boot off.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `path` | string | (required) | Absolute path to the UEFI firmware image, for example `/usr/share/OVMF/OVMF_CODE_4M.fd`. |
+| `vars_path` | string | (required) | Absolute path to the matching UEFI variables template, for example `/usr/share/OVMF/OVMF_VARS_4M.fd`. Each VM gets its own copy beside its overlay, removed with it. |
 
 ### `runners.<name>.tart`
 
