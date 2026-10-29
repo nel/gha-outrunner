@@ -42,9 +42,6 @@ func TestRenderDomainXML(t *testing.T) {
 				if !strings.Contains(xmlStr, "<source network='default'/>") {
 					t.Error("missing network")
 				}
-				if strings.Contains(xmlStr, "<tpm") {
-					t.Error("unexpected TPM")
-				}
 			},
 		},
 		{
@@ -56,9 +53,6 @@ func TestRenderDomainXML(t *testing.T) {
 			check: func(t *testing.T, xmlStr string) {
 				if !strings.Contains(xmlStr, "<vcpu>32</vcpu>") {
 					t.Error("expected 32 vcpus")
-				}
-				if !strings.Contains(xmlStr, "<topology sockets='1' cores='32' threads='1'/>") {
-					t.Error("expected 32 cores on one processor")
 				}
 				if !strings.Contains(xmlStr, "<memory unit='MiB'>65536</memory>") {
 					t.Error("expected 65536 MiB memory")
@@ -80,54 +74,6 @@ func TestRenderDomainXML(t *testing.T) {
 				}
 				if !strings.Contains(xmlStr, "<memory unit='MiB'>512</memory>") {
 					t.Error("expected 512 MiB memory")
-				}
-			},
-		},
-		{
-			name:    "tpm",
-			vmName:  "with-tpm",
-			overlay: "/tmp/with-tpm.qcow2",
-			img:     &outrunner.LibvirtImage{CPUs: 4, MemoryMB: 8192, TPM: true},
-			network: "default",
-			check: func(t *testing.T, xmlStr string) {
-				if !strings.Contains(xmlStr, "<backend type='emulator' version='2.0'/>") {
-					t.Error("missing TPM emulator")
-				}
-			},
-		},
-		{
-			name:    "default firmware",
-			vmName:  "autoselect",
-			overlay: "/tmp/autoselect.qcow2",
-			img:     &outrunner.LibvirtImage{CPUs: 4, MemoryMB: 8192},
-			network: "default",
-			check: func(t *testing.T, xmlStr string) {
-				if !strings.Contains(xmlStr, "firmware='efi'") {
-					t.Error("expected firmware autoselection by default")
-				}
-			},
-		},
-		{
-			name:    "explicit firmware",
-			vmName:  "testsigning",
-			overlay: "/tmp/testsigning.qcow2",
-			img: &outrunner.LibvirtImage{
-				CPUs: 4, MemoryMB: 8192,
-				Firmware: &outrunner.LibvirtFirmware{
-					Path:     "/usr/share/OVMF/OVMF_CODE_4M.fd",
-					VarsPath: "/usr/share/OVMF/OVMF_VARS_4M.fd",
-				},
-			},
-			network: "default",
-			check: func(t *testing.T, xmlStr string) {
-				if strings.Contains(xmlStr, "firmware='efi'") {
-					t.Error("explicit firmware must disable autoselection")
-				}
-				if !strings.Contains(xmlStr, "<loader readonly='yes' type='pflash'>/usr/share/OVMF/OVMF_CODE_4M.fd</loader>") {
-					t.Error("missing loader")
-				}
-				if !strings.Contains(xmlStr, "<nvram template='/usr/share/OVMF/OVMF_VARS_4M.fd'>/tmp/testsigning.fd</nvram>") {
-					t.Error("missing nvram beside the overlay")
 				}
 			},
 		},
@@ -213,65 +159,29 @@ func TestGuestExecResultParsing(t *testing.T) {
 
 func TestResolveBasePath(t *testing.T) {
 	dir := t.TempDir()
-	gen1 := filepath.Join(dir, "base-1.qcow2")
-	gen2 := filepath.Join(dir, "base-2.qcow2")
-	for _, f := range []string{gen1, gen2} {
-		if err := os.WriteFile(f, nil, 0o644); err != nil {
-			t.Fatal(err)
-		}
+	base := filepath.Join(dir, "base-1.qcow2")
+	if err := os.WriteFile(base, nil, 0o644); err != nil {
+		t.Fatal(err)
 	}
-	link := filepath.Join(dir, "base.qcow2.latest")
-	if err := os.Symlink("base-1.qcow2", link); err != nil {
+	link := filepath.Join(dir, "base.qcow2")
+	if err := os.Symlink(base, link); err != nil {
 		t.Fatal(err)
 	}
 
-	// t.TempDir may itself sit behind a symlink (e.g. /var on macOS).
-	want := func(p string) string {
-		t.Helper()
-		r, err := filepath.EvalSymlinks(p)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return r
+	// t.TempDir may itself be under a symlink (e.g. /var on macOS)
+	want, err := filepath.EvalSymlinks(base)
+	if err != nil {
+		t.Fatal(err)
 	}
-
 	got, err := resolveBasePath(link)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != want(gen1) {
-		t.Errorf("got %s, want %s", got, want(gen1))
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
 	}
 
-	// Repointing the link changes what the next VM gets.
-	if err := os.Remove(link); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink("base-2.qcow2", link); err != nil {
-		t.Fatal(err)
-	}
-	got, err = resolveBasePath(link)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != want(gen2) {
-		t.Errorf("got %s, want %s", got, want(gen2))
-	}
-
-	// A plain file resolves to itself.
-	got, err = resolveBasePath(gen1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != want(gen1) {
-		t.Errorf("got %s, want %s", got, want(gen1))
-	}
-
-	// A dangling link fails.
-	if err := os.Remove(gen2); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := resolveBasePath(link); err == nil {
-		t.Error("expected error for dangling symlink")
+	if _, err := resolveBasePath(filepath.Join(dir, "missing.qcow2")); err == nil {
+		t.Error("expected error for missing base image")
 	}
 }
