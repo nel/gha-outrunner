@@ -3,6 +3,8 @@ package libvirt
 import (
 	"encoding/json"
 	"encoding/xml"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -206,5 +208,70 @@ func TestGuestExecResultParsing(t *testing.T) {
 				t.Errorf("expected PID %d, got %d", tt.wantPID, result.Return.PID)
 			}
 		})
+	}
+}
+
+func TestResolveBasePath(t *testing.T) {
+	dir := t.TempDir()
+	gen1 := filepath.Join(dir, "base-1.qcow2")
+	gen2 := filepath.Join(dir, "base-2.qcow2")
+	for _, f := range []string{gen1, gen2} {
+		if err := os.WriteFile(f, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	link := filepath.Join(dir, "base.qcow2.latest")
+	if err := os.Symlink("base-1.qcow2", link); err != nil {
+		t.Fatal(err)
+	}
+
+	// t.TempDir may itself sit behind a symlink (e.g. /var on macOS).
+	want := func(p string) string {
+		t.Helper()
+		r, err := filepath.EvalSymlinks(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+
+	got, err := resolveBasePath(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want(gen1) {
+		t.Errorf("got %s, want %s", got, want(gen1))
+	}
+
+	// Repointing the link changes what the next VM gets.
+	if err := os.Remove(link); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("base-2.qcow2", link); err != nil {
+		t.Fatal(err)
+	}
+	got, err = resolveBasePath(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want(gen2) {
+		t.Errorf("got %s, want %s", got, want(gen2))
+	}
+
+	// A plain file resolves to itself.
+	got, err = resolveBasePath(gen1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want(gen1) {
+		t.Errorf("got %s, want %s", got, want(gen1))
+	}
+
+	// A dangling link fails.
+	if err := os.Remove(gen2); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := resolveBasePath(link); err == nil {
+		t.Error("expected error for dangling symlink")
 	}
 }
