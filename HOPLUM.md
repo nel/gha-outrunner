@@ -8,7 +8,7 @@ proposed upstream. Each patch lives on its own branch, merged here:
 | `libvirt-cpu-topology` | [#46](https://github.com/NetwindHQ/gha-outrunner/pull/46) | Windows guests use every vCPU |
 | `libvirt-tpm` | [#47](https://github.com/NetwindHQ/gha-outrunner/pull/47) | Optional emulated TPM 2.0 |
 | `libvirt-firmware` | [#48](https://github.com/NetwindHQ/gha-outrunner/pull/48) | Explicit UEFI firmware, so Secure Boot can be off |
-| `libvirt-resolve-base-symlink` | not yet opened | Symlinked `path` resolved per VM |
+| `libvirt-resolve-base-symlink` | [#53](https://github.com/NetwindHQ/gha-outrunner/pull/53) | Symlinked `path` resolved per VM |
 
 ## Update
 
