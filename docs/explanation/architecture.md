@@ -50,7 +50,7 @@ See the [Provisioner Reference](../reference/provisioners.md) for details on eac
 
 2. **Running:** Each listener long-polls for messages independently. GitHub sends desired runner counts based on queued jobs. outrunner provisions environments to meet demand (up to the per-runner `max_runners` limit).
 
-3. **Shutdown:** On SIGINT, outrunner stops all running environments, deregisters runners from GitHub, and closes all message sessions. Scale sets are kept for reuse on next startup.
+3. **Shutdown:** On SIGINT or SIGTERM, outrunner stops all running environments, deregisters runners from GitHub, and closes all message sessions. Scale sets are kept for reuse on next startup.
 
 If outrunner crashes without cleanup, the stale scale sets persist. On next startup, outrunner detects them via get-or-create logic and reuses them. Each provisioner also cleans up orphaned environments from previous runs.
 
