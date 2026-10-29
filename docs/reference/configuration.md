@@ -29,6 +29,7 @@ runners:
       memory: <int>                  # Default: 8192 (MiB)
       mount:                         # Optional virtiofs host directory share.
         source: <string>             # Host path. Tag is derived from the basename.
+      tpm: <bool>                    # Default: false
     tart:                            # Use Tart backend.
       image: <string>                # OCI image URL or local VM name.
       runner_cmd: <string>           # Default: /actions-runner/run.sh
@@ -146,6 +147,7 @@ Provisions a KVM/QEMU virtual machine per job using a copy-on-write overlay.
 | `cpus` | int | `4` | Number of vCPUs allocated to the VM. The guest sees one processor with that many cores: Windows 10 and 11 use at most two processors, so showing each vCPU as a separate processor would leave the rest unused. |
 | `memory` | int | `8192` | Memory in MiB allocated to the VM. |
 | `mount` | object | (none) | Optional virtiofs host directory share. See below. |
+| `tpm` | bool | `false` | Attach an emulated TPM 2.0 to each VM. The host needs `swtpm`. |
 
 **`mount` fields:**
 
