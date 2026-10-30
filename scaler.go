@@ -33,6 +33,11 @@ type Scaler struct {
 
 	mu      sync.Mutex
 	runners map[string]*RunnerState
+	// assignedJobs is the latest TotalAssignedJobs from the listener, and
+	// completedSinceCount the jobs completed since it arrived. Refill after
+	// cleanup uses their difference.
+	assignedJobs        int
+	completedSinceCount int
 
 	lifecycleCtx    context.Context
 	lifecycleCancel context.CancelFunc
@@ -61,6 +66,14 @@ func (s *Scaler) HandleDesiredRunnerCount(ctx context.Context, count int) (int, 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	s.assignedJobs = count
+	s.completedSinceCount = 0
+	return s.scaleLocked(ctx, count)
+}
+
+// scaleLocked spawns runners until count assigned jobs are covered, capped at
+// maxRunners. Callers hold s.mu.
+func (s *Scaler) scaleLocked(ctx context.Context, count int) (int, error) {
 	target := min(s.maxRunners, count)
 	current := len(s.runners)
 
@@ -131,6 +144,10 @@ func (s *Scaler) HandleJobCompleted(ctx context.Context, jobInfo *scaleset.JobCo
 
 	s.mu.Lock()
 	state, exists := s.runners[jobInfo.RunnerName]
+	if exists {
+		state.servedJob = true
+		s.completedSinceCount++
+	}
 	s.mu.Unlock()
 
 	if exists {
@@ -191,7 +208,7 @@ func (s *Scaler) Runners() []RunnerSnapshot {
 // deregistration, and map cleanup.
 func (s *Scaler) runRunnerLifecycle(state *RunnerState, req *RunnerRequest) {
 	defer s.wg.Done()
-	defer s.removeRunner(state.Name)
+	defer s.removeRunner(state)
 
 	name := state.Name
 
@@ -243,10 +260,52 @@ func (s *Scaler) runRunnerLifecycle(state *RunnerState, req *RunnerRequest) {
 	s.deregisterRunner(name, state.RunnerID)
 }
 
-func (s *Scaler) removeRunner(name string) {
+func (s *Scaler) removeRunner(state *RunnerState) {
 	s.mu.Lock()
-	delete(s.runners, name)
-	s.mu.Unlock()
+	defer s.mu.Unlock()
+	delete(s.runners, state.Name)
+	if state.servedJob {
+		s.refillLocked()
+	}
+}
+
+// refillTimeout bounds the JIT request a refill makes while holding s.mu.
+const refillTimeout = 30 * time.Second
+
+// refillLocked serves jobs assigned while a finished runner still held the
+// last slot. The listener only rescales when a message arrives, and GitHub's
+// long poll can hold the next one for about 50s, so without this such a job
+// waits out the poll. Runners that failed to provision never refill: the next
+// listener message retries them, so a broken image cannot spin. Callers hold
+// s.mu inside a lifecycle goroutine, so the wait group is positive at Add.
+func (s *Scaler) refillLocked() {
+	if s.lifecycleCtx.Err() != nil {
+		return
+	}
+	if min(s.maxRunners, s.pendingJobsLocked()) <= len(s.runners) {
+		return
+	}
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.lifecycleCtx.Err() != nil {
+			return
+		}
+		ctx, cancel := context.WithTimeout(s.lifecycleCtx, refillTimeout)
+		defer cancel()
+		if _, err := s.scaleLocked(ctx, s.pendingJobsLocked()); err != nil {
+			// The next listener message retries with fresh statistics.
+			s.logger.Warn("Refill after cleanup failed", slog.String("error", err.Error()))
+		}
+	}()
+}
+
+// pendingJobsLocked is the latest assigned-job count less the jobs completed
+// since. Callers hold s.mu.
+func (s *Scaler) pendingJobsLocked() int {
+	return max(0, s.assignedJobs-s.completedSinceCount)
 }
 
 func (s *Scaler) deregisterRunner(name string, runnerID int) {
