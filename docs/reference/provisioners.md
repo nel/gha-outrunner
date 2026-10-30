@@ -70,6 +70,18 @@ docker:
   memory: 2048
 ```
 
+### Devices and Groups
+
+`devices` passes host devices into each runner container at the same path, read-write, as `docker run --device` would. Paths must be absolute. `group_add` adds supplementary groups, as `docker run --group-add` would. With rootless Podman, `keep-groups` keeps the host user's groups, so a job can use a device that group owns:
+
+```yaml
+docker:
+  image: ghcr.io/actions/actions-runner:latest
+  userns: keep-id:uid=1001,gid=1001
+  devices: [/dev/kvm]
+  group_add: [keep-groups]   # the host user is in group kvm
+```
+
 ### Requirements
 
 - Docker Engine or compatible runtime
