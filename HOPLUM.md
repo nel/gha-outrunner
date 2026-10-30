@@ -11,6 +11,7 @@ proposed upstream. Each patch lives on its own branch, merged here:
 | `libvirt-resolve-base-symlink` | [#53](https://github.com/NetwindHQ/gha-outrunner/pull/53) | Symlinked `path` resolved per VM |
 | `shutdown-on-sigterm` | not yet opened | Clean shutdown when systemd or launchd stops the service |
 | `refill-after-cleanup` | not yet opened | Next queued job starts without the ~50 s long-poll wait |
+| `libvirt-cleanup-orphans` | not yet opened | Orphaned libvirt VMs and files removed at startup |
 
 ## Update
 
