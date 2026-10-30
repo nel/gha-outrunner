@@ -11,6 +11,11 @@ runners:
       # Optional: container network mode. "host" lets jobs reach ports that
       # sibling containers (e.g. GitHub Actions services:) publish on the host.
       # network: host
+      # Optional: user namespace mode. With rootless Podman, keep-id maps the
+      # host user to the image's runner user (UID 1001 in actions-runner).
+      # userns: keep-id:uid=1001,gid=1001
+      # Optional: memory limit per runner container, in MiB.
+      # memory: 2048
       # Optional: bind mount a host directory into every container.
       # Useful for a persistent build cache (e.g. vcpkg, cargo, gradle).
       # mounts:
