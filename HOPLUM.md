@@ -12,6 +12,7 @@ proposed upstream. Each patch lives on its own branch, merged here:
 | `shutdown-on-sigterm` | not yet opened | Clean shutdown when systemd or launchd stops the service |
 | `refill-after-cleanup` | not yet opened | Next queued job starts without the ~50 s long-poll wait |
 | `libvirt-cleanup-orphans` | not yet opened | Orphaned libvirt VMs and files removed at startup |
+| `docker-network` | not yet opened | Docker runners can use host networking for `services:` ports |
 
 ## Update
 
