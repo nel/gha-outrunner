@@ -3,8 +3,11 @@ package libvirt
 import (
 	"encoding/json"
 	"encoding/xml"
+	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -237,5 +240,35 @@ func TestResolveBasePath(t *testing.T) {
 
 	if _, err := resolveBasePath(filepath.Join(dir, "missing.qcow2")); err == nil {
 		t.Error("expected error for missing base image")
+	}
+}
+
+func TestRemoveOrphanFiles(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{
+		"ci-linux-1a2b3c4d.qcow2",
+		"ci-linux-1a2b3c4d.fd",
+		"ci-linux-5e6f7a8b.qcow2",
+		"ci-macos-1a2b3c4d.qcow2", // another scale set
+		"base.qcow2",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	removeOrphanFiles(slog.New(slog.NewTextHandler(io.Discard, nil)), dir, "ci-linux-")
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var left []string
+	for _, e := range entries {
+		left = append(left, e.Name())
+	}
+	want := []string{"base.qcow2", "ci-macos-1a2b3c4d.qcow2"}
+	if !slices.Equal(left, want) {
+		t.Errorf("files left = %v, want %v", left, want)
 	}
 }
