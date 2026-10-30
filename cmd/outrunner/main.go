@@ -132,11 +132,16 @@ func run(ctx context.Context) error {
 		})
 	}
 
+	budget := outrunner.NewMemoryBudget(config.MemoryBudget)
+	if budget != nil {
+		logger.Info("Shared memory budget", slog.Int("memoryMB", config.MemoryBudget))
+	}
+
 	g, ctx := errgroup.WithContext(ctx)
 	for _, r := range resolved {
 		client := clients[r.key]
 		g.Go(func() error {
-			return runWorker(ctx, logger, listenerLogger, client, r.name, &r.runner, r.maxRunners)
+			return runWorker(ctx, logger, listenerLogger, client, r.name, &r.runner, r.maxRunners, budget)
 		})
 	}
 
@@ -149,7 +154,7 @@ func run(ctx context.Context) error {
 	return nil
 }
 
-func runWorker(ctx context.Context, logger, listenerLogger *slog.Logger, client *scaleset.Client, name string, runner *outrunner.RunnerConfig, maxRunners int) error {
+func runWorker(ctx context.Context, logger, listenerLogger *slog.Logger, client *scaleset.Client, name string, runner *outrunner.RunnerConfig, maxRunners int, budget *outrunner.MemoryBudget) error {
 	logger = logger.With(slog.String("scaleSet", name))
 
 	// Create provisioner
@@ -225,7 +230,7 @@ func runWorker(ctx context.Context, logger, listenerLogger *slog.Logger, client 
 	scaler := outrunner.NewScaler(
 		logger.WithGroup("scaler"),
 		client, scaleSet.ID, maxRunners, name, runner, prov,
-	)
+	).WithMemoryBudget(budget)
 
 	logger.Info("Listening for jobs", slog.Int("maxRunners", maxRunners))
 	err = l.Run(ctx, scaler)

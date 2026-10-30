@@ -15,6 +15,7 @@ proposed upstream. Each patch lives on its own branch, merged here:
 | `docker-network` | not yet opened | Docker runners can use host networking for `services:` ports |
 | `docker-userns-memory` | not yet opened | Docker runners: user namespace mode and memory limit (stacked on `docker-network`) |
 | `docker-devices` | not yet opened | Docker runners: host devices and supplementary groups, e.g. /dev/kvm (stacked on `docker-userns-memory`) |
+| `memory-budget` | not yet opened | One host memory budget admits the runners of every scale set, so `max_runners` can follow demand |
 
 ## Update
 

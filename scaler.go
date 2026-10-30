@@ -30,8 +30,11 @@ type Scaler struct {
 	namePrefix  string
 	runner      *RunnerConfig
 	provisioner Provisioner
+	// budget, shared by every scale set, admits each runner before it is
+	// provisioned; nil admits all.
+	budget *MemoryBudget
 
-	mu      sync.Mutex
+	mu     sync.Mutex
 	runners map[string]*RunnerState
 	// assignedJobs is the latest TotalAssignedJobs from the listener, and
 	// completedSinceCount the jobs completed since it arrived. Refill after
@@ -212,7 +215,19 @@ func (s *Scaler) runRunnerLifecycle(state *RunnerState, req *RunnerRequest) {
 
 	name := state.Name
 
-	// 1. Provision
+	// 1. Wait for host memory, held until the environment is stopped.
+	memory := req.Runner.MemoryMB()
+	if !s.budget.TryAcquire(memory) {
+		s.logger.Info("Waiting for host memory", slog.String("name", name), slog.Int("memoryMB", memory))
+		if err := s.budget.Acquire(s.lifecycleCtx, memory); err != nil {
+			s.deregisterRunner(name, state.RunnerID)
+			return
+		}
+		s.logger.Info("Host memory admitted", slog.String("name", name))
+	}
+	defer s.budget.Release(memory)
+
+	// 2. Provision
 	if err := s.provisioner.Start(s.lifecycleCtx, req); err != nil {
 		s.logger.Error("Failed to start runner",
 			slog.String("name", name),
@@ -233,7 +248,7 @@ func (s *Scaler) runRunnerLifecycle(state *RunnerState, req *RunnerRequest) {
 	state.StartedAt = time.Now()
 	s.mu.Unlock()
 
-	// 2. Wait for completion signal or shutdown
+	// 3. Wait for completion signal or shutdown
 	select {
 	case <-state.done:
 		s.logger.Debug("Runner signaled done", slog.String("name", name))
@@ -241,7 +256,7 @@ func (s *Scaler) runRunnerLifecycle(state *RunnerState, req *RunnerRequest) {
 		s.logger.Debug("Runner shutdown requested", slog.String("name", name))
 	}
 
-	// 3. Stop
+	// 4. Stop
 	s.mu.Lock()
 	state.Phase = RunnerStopping
 	s.mu.Unlock()
@@ -256,7 +271,7 @@ func (s *Scaler) runRunnerLifecycle(state *RunnerState, req *RunnerRequest) {
 		)
 	}
 
-	// 4. Deregister from GitHub
+	// 5. Deregister from GitHub
 	s.deregisterRunner(name, state.RunnerID)
 }
 
