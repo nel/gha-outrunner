@@ -7,6 +7,7 @@ outrunner uses a YAML configuration file. Default location: `/etc/outrunner/conf
 ```yaml
 url: <string>                        # Global repository or org URL.
 token_file: <string>                 # Global path to a file containing the GitHub token.
+memory_budget: <int>                 # Optional. MiB shared by all running runners; each waits for room before provisioning. Every runner then needs a memory limit.
 
 runners:
   <scale-set-name>:                  # The key becomes the GitHub scale set name.

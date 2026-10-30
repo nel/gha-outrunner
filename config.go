@@ -11,9 +11,12 @@ import (
 
 // Config is the outrunner configuration file format.
 type Config struct {
-	URL       string                  `yaml:"url"`
-	TokenFile string                  `yaml:"token_file"`
-	Runners   map[string]RunnerConfig `yaml:"runners"`
+	URL       string `yaml:"url"`
+	TokenFile string `yaml:"token_file"`
+	// MemoryBudget, in MiB, bounds the memory of all running runner
+	// environments together; 0 means no shared limit.
+	MemoryBudget int                     `yaml:"memory_budget,omitempty"`
+	Runners      map[string]RunnerConfig `yaml:"runners"`
 }
 
 // RunnerConfig defines a runner environment and the scale set it registers.
@@ -169,7 +172,14 @@ func LoadConfig(path string) (*Config, error) {
 			}
 		}
 
+		if cfg.MemoryBudget > 0 && (runner.MemoryMB() <= 0 || runner.MemoryMB() > cfg.MemoryBudget) {
+			return nil, fmt.Errorf("runner %q: memory_budget needs a memory limit between 1 and %d MiB", name, cfg.MemoryBudget)
+		}
+
 		cfg.Runners[name] = runner
+	}
+	if cfg.MemoryBudget < 0 {
+		return nil, fmt.Errorf("memory_budget must not be negative")
 	}
 
 	return &cfg, nil
