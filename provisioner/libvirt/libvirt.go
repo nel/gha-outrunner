@@ -163,9 +163,10 @@ func (p *Provisioner) Close() error {
 	return p.conn.Disconnect()
 }
 
-// Cleanup destroys any leftover VMs and overlay files from previous runs.
+// Cleanup destroys any leftover VMs and their files from previous runs.
 func (p *Provisioner) Cleanup(prefix string) {
-	domains, _, err := p.conn.ConnectListAllDomains(0, 0)
+	// NeedResults must be set, or libvirt returns only the count of domains.
+	domains, _, err := p.conn.ConnectListAllDomains(1, 0)
 	if err != nil {
 		p.logger.Error("Failed to list domains for cleanup", slog.String("error", err.Error()))
 		return
@@ -183,9 +184,33 @@ func (p *Provisioner) Cleanup(prefix string) {
 				slog.String("error", err.Error()),
 			)
 		}
+	}
 
-		overlayPath := filepath.Join(p.overlayDir, name+".qcow2")
-		_ = os.Remove(overlayPath)
+	overlayDir := p.overlayDir
+	if overlayDir == "" {
+		overlayDir = os.TempDir()
+	}
+	removeOrphanFiles(p.logger, overlayDir, prefix)
+}
+
+// removeOrphanFiles deletes the overlays and other per-VM files of runners
+// whose names start with prefix. Files are named after their VM, so this also
+// catches files whose domain is already gone, as after a host reboot.
+func removeOrphanFiles(logger *slog.Logger, dir, prefix string) {
+	paths, err := filepath.Glob(filepath.Join(dir, prefix+"*"))
+	if err != nil {
+		logger.Error("Failed to list orphaned files", slog.String("error", err.Error()))
+		return
+	}
+	for _, path := range paths {
+		if err := os.Remove(path); err != nil {
+			logger.Warn("Failed to remove orphaned file",
+				slog.String("path", path),
+				slog.String("error", err.Error()),
+			)
+			continue
+		}
+		logger.Info("Removed orphaned file", slog.String("path", path))
 	}
 }
 
