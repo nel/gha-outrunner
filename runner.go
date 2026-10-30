@@ -39,8 +39,9 @@ type RunnerState struct {
 	CreatedAt time.Time
 	StartedAt time.Time // when Start() completed (provisioning finished)
 
-	done     chan struct{}
-	doneOnce sync.Once
+	servedJob bool // a job completed on this runner; guarded by Scaler.mu
+	done      chan struct{}
+	doneOnce  sync.Once
 }
 
 // SignalDone closes the done channel, signaling the runner goroutine to stop.

@@ -56,6 +56,7 @@ type mockProvisioner struct {
 	stopped  []string
 	startErr error
 	startCh  chan struct{} // if set, Start blocks until closed
+	stopCh   chan struct{} // if set, Stop blocks until closed
 }
 
 func newMockProvisioner() *mockProvisioner {
@@ -80,6 +81,9 @@ func (m *mockProvisioner) Start(ctx context.Context, req *RunnerRequest) error {
 }
 
 func (m *mockProvisioner) Stop(_ context.Context, name string) error {
+	if m.stopCh != nil {
+		<-m.stopCh
+	}
 	m.mu.Lock()
 	m.stopped = append(m.stopped, name)
 	m.mu.Unlock()
@@ -98,6 +102,15 @@ func newTestScaler(client ScaleSetClient, prov Provisioner) *Scaler {
 	return NewScaler(
 		noopLogger(),
 		client, 1, 10, "test",
+		&RunnerConfig{Docker: &DockerImage{Image: "test:latest"}},
+		prov,
+	)
+}
+
+func newSingleRunnerScaler(client ScaleSetClient, prov Provisioner) *Scaler {
+	return NewScaler(
+		noopLogger(),
+		client, 1, 1, "test",
 		&RunnerConfig{Docker: &DockerImage{Image: "test:latest"}},
 		prov,
 	)
@@ -574,6 +587,142 @@ func TestRunnerNamePrefix(t *testing.T) {
 	prefix := name[:len("my-scale-set-")]
 	if prefix != "my-scale-set-" {
 		t.Errorf("expected prefix 'my-scale-set-', got %q", prefix)
+	}
+
+	s.Shutdown(context.Background())
+}
+
+// completeOnlyRunner provisions one runner for one assigned job and completes
+// that job, returning the runner's name.
+func completeOnlyRunner(t *testing.T, s *Scaler) string {
+	t.Helper()
+	_, _ = s.HandleDesiredRunnerCount(context.Background(), 1)
+	time.Sleep(50 * time.Millisecond)
+
+	runners := s.Runners()
+	if len(runners) != 1 {
+		t.Fatalf("expected 1 runner, got %d", len(runners))
+	}
+	name := runners[0].Name
+	_ = s.HandleJobCompleted(context.Background(), &scaleset.JobCompleted{
+		RunnerName: name,
+		Result:     "succeeded",
+	})
+	time.Sleep(50 * time.Millisecond)
+	return name
+}
+
+func TestRefillAfterCleanup(t *testing.T) {
+	client := newMockClient()
+	prov := newMockProvisioner()
+	prov.stopCh = make(chan struct{}) // hold the finished runner in cleanup
+	s := newSingleRunnerScaler(client, prov)
+
+	first := completeOnlyRunner(t, s)
+
+	// The next job is assigned while the finished runner holds the only slot
+	count, err := s.HandleDesiredRunnerCount(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("HandleDesiredRunnerCount: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected count 1 during cleanup, got %d", count)
+	}
+	if runners := s.Runners(); len(runners) != 1 || runners[0].Name != first {
+		t.Fatalf("expected only %s during cleanup, got %v", first, runners)
+	}
+
+	// Cleanup finishes: the assigned job gets a runner with no further message
+	close(prov.stopCh)
+	time.Sleep(100 * time.Millisecond)
+
+	runners := s.Runners()
+	if len(runners) != 1 {
+		t.Fatalf("expected 1 refilled runner, got %d", len(runners))
+	}
+	if runners[0].Name == first {
+		t.Errorf("expected a new runner, got %s again", first)
+	}
+
+	s.Shutdown(context.Background())
+}
+
+func TestNoRefillWithoutAssignment(t *testing.T) {
+	client := newMockClient()
+	prov := newMockProvisioner()
+	prov.stopCh = make(chan struct{})
+	s := newSingleRunnerScaler(client, prov)
+
+	completeOnlyRunner(t, s)
+
+	// Statistics after the completion show nothing left to run
+	_, _ = s.HandleDesiredRunnerCount(context.Background(), 0)
+	close(prov.stopCh)
+	time.Sleep(100 * time.Millisecond)
+
+	if runners := s.Runners(); len(runners) != 0 {
+		t.Errorf("expected 0 runners, got %d", len(runners))
+	}
+
+	s.Shutdown(context.Background())
+}
+
+func TestRefillBeforeStatistics(t *testing.T) {
+	client := newMockClient()
+	prov := newMockProvisioner()
+	s := newSingleRunnerScaler(client, prov)
+
+	// Two jobs assigned, one slot: the second waits for the first runner
+	_, _ = s.HandleDesiredRunnerCount(context.Background(), 2)
+	time.Sleep(50 * time.Millisecond)
+	runners := s.Runners()
+	if len(runners) != 1 {
+		t.Fatalf("expected 1 runner, got %d", len(runners))
+	}
+	first := runners[0].Name
+
+	// Cleanup finishes before the completion's statistics arrive: the
+	// completed job is subtracted from the stale count of two
+	_ = s.HandleJobCompleted(context.Background(), &scaleset.JobCompleted{
+		RunnerName: first,
+		Result:     "succeeded",
+	})
+	time.Sleep(100 * time.Millisecond)
+
+	runners = s.Runners()
+	if len(runners) != 1 || runners[0].Name == first {
+		t.Fatalf("expected 1 new runner, got %v", runners)
+	}
+
+	// The second job completes before statistics: nothing is left to refill
+	_ = s.HandleJobCompleted(context.Background(), &scaleset.JobCompleted{
+		RunnerName: runners[0].Name,
+		Result:     "succeeded",
+	})
+	time.Sleep(100 * time.Millisecond)
+
+	if runners := s.Runners(); len(runners) != 0 {
+		t.Errorf("expected 0 runners, got %d", len(runners))
+	}
+
+	s.Shutdown(context.Background())
+}
+
+func TestNoRefillAfterProvisioningFailure(t *testing.T) {
+	client := newMockClient()
+	prov := newMockProvisioner()
+	prov.startErr = errors.New("clone failed")
+	s := newSingleRunnerScaler(client, prov)
+
+	_, _ = s.HandleDesiredRunnerCount(context.Background(), 1)
+	time.Sleep(100 * time.Millisecond)
+
+	// The failed runner is gone and not replaced until the next message
+	if runners := s.Runners(); len(runners) != 0 {
+		t.Errorf("expected 0 runners, got %d", len(runners))
+	}
+	if n := client.nextID - 1; n != 1 {
+		t.Errorf("expected 1 JIT config, got %d", n)
 	}
 
 	s.Shutdown(context.Background())
