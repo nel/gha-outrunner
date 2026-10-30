@@ -58,3 +58,26 @@ func TestHostConfigUsernsAndMemory(t *testing.T) {
 		t.Errorf("Memory = %d, want 2147483648", hc.Memory)
 	}
 }
+
+func TestHostConfigDevicesAndGroups(t *testing.T) {
+	hc := hostConfig(&outrunner.DockerImage{Image: "runner:latest"})
+	if len(hc.Devices) != 0 || len(hc.GroupAdd) != 0 {
+		t.Errorf("defaults: Devices = %v, GroupAdd = %v, want both empty", hc.Devices, hc.GroupAdd)
+	}
+
+	hc = hostConfig(&outrunner.DockerImage{
+		Image:    "runner:latest",
+		Devices:  []string{"/dev/kvm"},
+		GroupAdd: []string{"keep-groups"},
+	})
+	if len(hc.Devices) != 1 {
+		t.Fatalf("expected 1 device, got %d", len(hc.Devices))
+	}
+	d := hc.Devices[0]
+	if d.PathOnHost != "/dev/kvm" || d.PathInContainer != "/dev/kvm" || d.CgroupPermissions != "rwm" {
+		t.Errorf("unexpected device: %+v", d)
+	}
+	if len(hc.GroupAdd) != 1 || hc.GroupAdd[0] != "keep-groups" {
+		t.Errorf("GroupAdd = %v, want [keep-groups]", hc.GroupAdd)
+	}
+}

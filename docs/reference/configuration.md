@@ -20,6 +20,8 @@ runners:
       network: <string>              # Optional. Container network mode, e.g. host. Default: runtime default.
       userns: <string>               # Optional. User namespace mode, e.g. keep-id. Default: runtime default.
       memory: <int>                  # Optional. Memory limit in MiB. Default: no limit.
+      devices: [<string>]            # Optional. Absolute host device paths, mapped read-write at the same path.
+      group_add: [<string>]          # Optional. Supplementary groups, e.g. keep-groups on Podman.
       mounts:                        # Optional bind mounts.
         - source: <string>           # Host path.
           target: <string>           # Container path.

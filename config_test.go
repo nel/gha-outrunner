@@ -396,6 +396,57 @@ runners:
 	}
 }
 
+func TestLoadConfigDockerDevices(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yml")
+
+	content := `url: https://github.com/org/repo
+runners:
+  kvm:
+    labels: [linux]
+    docker:
+      image: runner:latest
+      devices: [/dev/kvm]
+      group_add: [keep-groups]
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	docker := cfg.Runners["kvm"].Docker
+	if len(docker.Devices) != 1 || docker.Devices[0] != "/dev/kvm" {
+		t.Errorf("devices = %v", docker.Devices)
+	}
+	if len(docker.GroupAdd) != 1 || docker.GroupAdd[0] != "keep-groups" {
+		t.Errorf("group_add = %v", docker.GroupAdd)
+	}
+}
+
+func TestLoadConfigDockerRelativeDevice(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yml")
+
+	content := `url: https://github.com/org/repo
+runners:
+  kvm:
+    labels: [linux]
+    docker:
+      image: runner:latest
+      devices: [dev/kvm]
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := LoadConfig(path); err == nil {
+		t.Fatal("expected error for relative device path")
+	}
+}
+
 func TestLoadConfigNoMounts(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yml")

@@ -61,6 +61,8 @@ type DockerImage struct {
 	Network   string        `yaml:"network,omitempty"` // container network mode, e.g. "host"; default is the runtime's
 	Userns    string        `yaml:"userns,omitempty"`  // user namespace mode, e.g. "keep-id:uid=1001,gid=1001"
 	MemoryMB  int           `yaml:"memory,omitempty"`  // memory limit in MiB; 0 means no limit
+	Devices   []string      `yaml:"devices,omitempty"` // host device paths, mapped to the same path read-write
+	GroupAdd  []string      `yaml:"group_add,omitempty"`
 	Mounts    []DockerMount `yaml:"mounts"`
 }
 
@@ -123,6 +125,13 @@ func LoadConfig(path string) (*Config, error) {
 
 		if runner.Docker != nil && runner.Docker.MemoryMB < 0 {
 			return nil, fmt.Errorf("runner %q: docker memory must not be negative", name)
+		}
+		if runner.Docker != nil {
+			for _, dev := range runner.Docker.Devices {
+				if !filepath.IsAbs(dev) {
+					return nil, fmt.Errorf("runner %q: docker device %q must be an absolute path", name, dev)
+				}
+			}
 		}
 
 		// Apply defaults for libvirt runners

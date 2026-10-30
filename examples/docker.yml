@@ -16,6 +16,9 @@ runners:
       # userns: keep-id:uid=1001,gid=1001
       # Optional: memory limit per runner container, in MiB.
       # memory: 2048
+      # Optional: host devices and supplementary groups, e.g. for KVM in jobs.
+      # devices: [/dev/kvm]
+      # group_add: [keep-groups]
       # Optional: bind mount a host directory into every container.
       # Useful for a persistent build cache (e.g. vcpkg, cargo, gradle).
       # mounts:

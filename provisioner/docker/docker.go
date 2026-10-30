@@ -148,11 +148,23 @@ func hostConfig(dcfg *outrunner.DockerImage) *container.HostConfig {
 			ReadOnly: m.ReadOnly,
 		})
 	}
+	var devices []container.DeviceMapping
+	for _, dev := range dcfg.Devices {
+		devices = append(devices, container.DeviceMapping{
+			PathOnHost:        dev,
+			PathInContainer:   dev,
+			CgroupPermissions: "rwm",
+		})
+	}
 	return &container.HostConfig{
 		AutoRemove:  true,
 		Mounts:      mounts,
 		NetworkMode: container.NetworkMode(dcfg.Network),
 		UsernsMode:  container.UsernsMode(dcfg.Userns),
-		Resources:   container.Resources{Memory: int64(dcfg.MemoryMB) << 20},
+		GroupAdd:    dcfg.GroupAdd,
+		Resources: container.Resources{
+			Memory:  int64(dcfg.MemoryMB) << 20,
+			Devices: devices,
+		},
 	}
 }
