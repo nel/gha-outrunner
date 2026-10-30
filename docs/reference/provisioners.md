@@ -38,6 +38,20 @@ docker:
       target: /opt/vcpkg-cache
 ```
 
+### Network
+
+The `network` config field sets the container's network mode, as `docker run --network` would. Leave it unset for the runtime's default network.
+
+Use `network: host` when jobs start sibling containers through a mounted Docker socket, such as GitHub Actions `services:`. Their ports are then published on the host, and the runner reaches them on `localhost` only when it shares the host's network.
+
+```yaml
+docker:
+  image: ghcr.io/actions/actions-runner:latest
+  network: host
+```
+
+A named network (for example `network: ci-net`) must already exist.
+
 ### Requirements
 
 - Docker Engine or compatible runtime

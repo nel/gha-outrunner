@@ -335,6 +335,38 @@ runners:
 	}
 }
 
+func TestLoadConfigDockerNetwork(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yml")
+
+	content := `url: https://github.com/org/repo
+runners:
+  host-net:
+    labels: [linux]
+    docker:
+      image: runner:latest
+      network: host
+  default-net:
+    labels: [linux-default]
+    docker:
+      image: runner:latest
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if got := cfg.Runners["host-net"].Docker.Network; got != "host" {
+		t.Errorf("network = %q, want host", got)
+	}
+	if got := cfg.Runners["default-net"].Docker.Network; got != "" {
+		t.Errorf("network = %q, want empty", got)
+	}
+}
+
 func TestLoadConfigNoMounts(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yml")

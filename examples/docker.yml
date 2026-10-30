@@ -8,6 +8,9 @@ runners:
     labels: [self-hosted, linux]
     docker:
       image: outrunner-runner:latest
+      # Optional: container network mode. "host" lets jobs reach ports that
+      # sibling containers (e.g. GitHub Actions services:) publish on the host.
+      # network: host
       # Optional: bind mount a host directory into every container.
       # Useful for a persistent build cache (e.g. vcpkg, cargo, gradle).
       # mounts:

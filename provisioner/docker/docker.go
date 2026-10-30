@@ -92,16 +92,6 @@ func (d *Provisioner) Start(ctx context.Context, req *outrunner.RunnerRequest) e
 		_ = reader.Close()
 	}
 
-	var mounts []mount.Mount
-	for _, m := range dcfg.Mounts {
-		mounts = append(mounts, mount.Mount{
-			Type:     mount.TypeBind,
-			Source:   m.Source,
-			Target:   m.Target,
-			ReadOnly: m.ReadOnly,
-		})
-	}
-
 	resp, err := d.client.ContainerCreate(ctx,
 		&container.Config{
 			Image: img,
@@ -111,10 +101,7 @@ func (d *Provisioner) Start(ctx context.Context, req *outrunner.RunnerRequest) e
 				"outrunner.name": req.Name,
 			},
 		},
-		&container.HostConfig{
-			AutoRemove: true,
-			Mounts:     mounts,
-		},
+		hostConfig(dcfg),
 		nil, nil, req.Name,
 	)
 	if err != nil {
@@ -148,4 +135,22 @@ func (d *Provisioner) Stop(ctx context.Context, name string) error {
 
 func (d *Provisioner) Close() error {
 	return d.client.Close()
+}
+
+// hostConfig builds the container's host settings from the runner config.
+func hostConfig(dcfg *outrunner.DockerImage) *container.HostConfig {
+	var mounts []mount.Mount
+	for _, m := range dcfg.Mounts {
+		mounts = append(mounts, mount.Mount{
+			Type:     mount.TypeBind,
+			Source:   m.Source,
+			Target:   m.Target,
+			ReadOnly: m.ReadOnly,
+		})
+	}
+	return &container.HostConfig{
+		AutoRemove:  true,
+		Mounts:      mounts,
+		NetworkMode: container.NetworkMode(dcfg.Network),
+	}
 }

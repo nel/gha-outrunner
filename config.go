@@ -66,6 +66,7 @@ type LibvirtFirmware struct {
 type DockerImage struct {
 	Image     string        `yaml:"image"`
 	RunnerCmd string        `yaml:"runner_cmd"`
+	Network   string        `yaml:"network,omitempty"` // container network mode, e.g. "host"; default is the runtime's
 	Mounts    []DockerMount `yaml:"mounts"`
 }
 
