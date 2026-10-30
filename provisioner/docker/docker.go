@@ -152,5 +152,7 @@ func hostConfig(dcfg *outrunner.DockerImage) *container.HostConfig {
 		AutoRemove:  true,
 		Mounts:      mounts,
 		NetworkMode: container.NetworkMode(dcfg.Network),
+		UsernsMode:  container.UsernsMode(dcfg.Userns),
+		Resources:   container.Resources{Memory: int64(dcfg.MemoryMB) << 20},
 	}
 }

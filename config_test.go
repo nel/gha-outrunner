@@ -367,6 +367,57 @@ runners:
 	}
 }
 
+func TestLoadConfigDockerUsernsAndMemory(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yml")
+
+	content := `url: https://github.com/org/repo
+runners:
+  podman:
+    labels: [linux]
+    docker:
+      image: runner:latest
+      userns: keep-id:uid=1001,gid=1001
+      memory: 2048
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	docker := cfg.Runners["podman"].Docker
+	if docker.Userns != "keep-id:uid=1001,gid=1001" {
+		t.Errorf("userns = %q", docker.Userns)
+	}
+	if docker.MemoryMB != 2048 {
+		t.Errorf("memory = %d, want 2048", docker.MemoryMB)
+	}
+}
+
+func TestLoadConfigDockerNegativeMemory(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yml")
+
+	content := `url: https://github.com/org/repo
+runners:
+  podman:
+    labels: [linux]
+    docker:
+      image: runner:latest
+      memory: -1
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := LoadConfig(path); err == nil {
+		t.Fatal("expected error for negative docker memory")
+	}
+}
+
 func TestLoadConfigNoMounts(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yml")

@@ -67,6 +67,8 @@ type DockerImage struct {
 	Image     string        `yaml:"image"`
 	RunnerCmd string        `yaml:"runner_cmd"`
 	Network   string        `yaml:"network,omitempty"` // container network mode, e.g. "host"; default is the runtime's
+	Userns    string        `yaml:"userns,omitempty"`  // user namespace mode, e.g. "keep-id:uid=1001,gid=1001"
+	MemoryMB  int           `yaml:"memory,omitempty"`  // memory limit in MiB; 0 means no limit
 	Mounts    []DockerMount `yaml:"mounts"`
 }
 
@@ -129,10 +131,15 @@ func LoadConfig(path string) (*Config, error) {
 			return nil, fmt.Errorf("runner %q: must specify docker, libvirt, or tart", name)
 		}
 
+<<<<<<< HEAD
 		if runner.Libvirt != nil && runner.Libvirt.Firmware != nil {
 			if fw := runner.Libvirt.Firmware; fw.Path == "" || fw.VarsPath == "" {
 				return nil, fmt.Errorf("runner %q: libvirt firmware requires path and vars_path", name)
 			}
+=======
+		if runner.Docker != nil && runner.Docker.MemoryMB < 0 {
+			return nil, fmt.Errorf("runner %q: docker memory must not be negative", name)
+>>>>>>> docker-userns-memory
 		}
 
 		// Apply defaults for libvirt runners

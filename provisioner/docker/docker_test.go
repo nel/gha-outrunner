@@ -39,3 +39,22 @@ func TestHostConfigMounts(t *testing.T) {
 		t.Errorf("unexpected mount: %+v", m)
 	}
 }
+
+func TestHostConfigUsernsAndMemory(t *testing.T) {
+	hc := hostConfig(&outrunner.DockerImage{Image: "runner:latest"})
+	if hc.UsernsMode != "" || hc.Memory != 0 {
+		t.Errorf("defaults: UsernsMode = %q, Memory = %d, want both unset", hc.UsernsMode, hc.Memory)
+	}
+
+	hc = hostConfig(&outrunner.DockerImage{
+		Image:    "runner:latest",
+		Userns:   "keep-id:uid=1001,gid=1001",
+		MemoryMB: 2048,
+	})
+	if hc.UsernsMode != "keep-id:uid=1001,gid=1001" {
+		t.Errorf("UsernsMode = %q", hc.UsernsMode)
+	}
+	if hc.Memory != 2147483648 {
+		t.Errorf("Memory = %d, want 2147483648", hc.Memory)
+	}
+}

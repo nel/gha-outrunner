@@ -18,6 +18,8 @@ runners:
       image: <string>                # Docker image name or tag.
       runner_cmd: <string>           # Default: ./run.sh
       network: <string>              # Optional. Container network mode, e.g. host. Default: runtime default.
+      userns: <string>               # Optional. User namespace mode, e.g. keep-id. Default: runtime default.
+      memory: <int>                  # Optional. Memory limit in MiB. Default: no limit.
       mounts:                        # Optional bind mounts.
         - source: <string>           # Host path.
           target: <string>           # Container path.

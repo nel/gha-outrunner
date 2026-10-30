@@ -52,6 +52,24 @@ docker:
 
 A named network (for example `network: ci-net`) must already exist.
 
+### User Namespace and Memory
+
+`userns` sets the container's user namespace mode, as `docker run --userns` would. With rootless Podman, `keep-id` maps the host user who runs outrunner to a user in the image, so that user owns bind-mounted files such as a Podman socket or a cache directory:
+
+```yaml
+docker:
+  image: ghcr.io/actions/actions-runner:latest
+  userns: keep-id:uid=1001,gid=1001   # the image's runner user
+```
+
+`memory` caps each runner container's memory in MiB, as `docker run --memory` would. Unset means no limit.
+
+```yaml
+docker:
+  image: ghcr.io/actions/actions-runner:latest
+  memory: 2048
+```
+
 ### Requirements
 
 - Docker Engine or compatible runtime
