@@ -13,6 +13,7 @@ proposed upstream. Each patch lives on its own branch, merged here:
 | `refill-after-cleanup` | not yet opened | Next queued job starts without the ~50 s long-poll wait |
 | `libvirt-cleanup-orphans` | not yet opened | Orphaned libvirt VMs and files removed at startup |
 | `docker-network` | not yet opened | Docker runners can use host networking for `services:` ports |
+| `docker-userns-memory` | not yet opened | Docker runners: user namespace mode and memory limit (stacked on `docker-network`) |
 
 ## Update
 

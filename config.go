@@ -131,15 +131,13 @@ func LoadConfig(path string) (*Config, error) {
 			return nil, fmt.Errorf("runner %q: must specify docker, libvirt, or tart", name)
 		}
 
-<<<<<<< HEAD
 		if runner.Libvirt != nil && runner.Libvirt.Firmware != nil {
 			if fw := runner.Libvirt.Firmware; fw.Path == "" || fw.VarsPath == "" {
 				return nil, fmt.Errorf("runner %q: libvirt firmware requires path and vars_path", name)
 			}
-=======
+		}
 		if runner.Docker != nil && runner.Docker.MemoryMB < 0 {
 			return nil, fmt.Errorf("runner %q: docker memory must not be negative", name)
->>>>>>> docker-userns-memory
 		}
 
 		// Apply defaults for libvirt runners
