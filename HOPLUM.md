@@ -14,6 +14,7 @@ proposed upstream. Each patch lives on its own branch, merged here:
 | `libvirt-cleanup-orphans` | not yet opened | Orphaned libvirt VMs and files removed at startup |
 | `docker-network` | not yet opened | Docker runners can use host networking for `services:` ports |
 | `docker-userns-memory` | not yet opened | Docker runners: user namespace mode and memory limit (stacked on `docker-network`) |
+| `docker-devices` | not yet opened | Docker runners: host devices and supplementary groups, e.g. /dev/kvm (stacked on `docker-userns-memory`) |
 
 ## Update
 
