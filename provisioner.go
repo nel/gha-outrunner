@@ -33,3 +33,21 @@ type Provisioner interface {
 	// Close releases any resources held by the provisioner (e.g., Docker client).
 	Close() error
 }
+
+// MemorySampler is implemented by provisioners that can measure the memory a
+// runner's job holds, so its peak is logged and the memory budget's floor
+// check counts only the part of its reservation it has not used yet.
+type MemorySampler interface {
+	// SampleMemory measures the runner's environment and what its job
+	// started beside it, such as service containers.
+	SampleMemory(ctx context.Context, name string) (MemorySample, error)
+}
+
+// MemorySample is a runner's memory use at one moment, in MiB.
+type MemorySample struct {
+	// ResidentMB is what the host cannot reclaim: anonymous, shared,
+	// kernel and swapped-out memory.
+	ResidentMB int
+	// TotalMB adds the page cache the host can reclaim under pressure.
+	TotalMB int
+}

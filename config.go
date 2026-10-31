@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -13,10 +14,16 @@ import (
 type Config struct {
 	URL       string `yaml:"url"`
 	TokenFile string `yaml:"token_file"`
-	// MemoryBudget, in MiB, bounds the memory of all running runner
-	// environments together; 0 means no shared limit.
-	MemoryBudget int                     `yaml:"memory_budget,omitempty"`
-	Runners      map[string]RunnerConfig `yaml:"runners"`
+	// MemoryBudget, in MiB, bounds the reservations of all running runners
+	// together; 0 means no shared limit.
+	MemoryBudget int `yaml:"memory_budget,omitempty"`
+	// MemoryFloor, in MiB, of the host's MemAvailable is kept free when
+	// admitting a runner; 0 admits on the budget alone.
+	MemoryFloor int `yaml:"memory_floor,omitempty"`
+	// MemoryAging is how long a waiting runner may be overtaken by smaller
+	// ones before it takes the next freed memory; 0 means never.
+	MemoryAging time.Duration           `yaml:"memory_aging,omitempty"`
+	Runners     map[string]RunnerConfig `yaml:"runners"`
 }
 
 // RunnerConfig defines a runner environment and the scale set it registers.
@@ -25,13 +32,17 @@ type Config struct {
 // URL and TokenFile are optional per-runner overrides; when empty the global
 // Config values are used.
 type RunnerConfig struct {
-	URL        string        `yaml:"url,omitempty"`
-	TokenFile  string        `yaml:"token_file,omitempty"`
-	Labels     []string      `yaml:"labels"`
-	MaxRunners int           `yaml:"max_runners,omitempty"`
-	Docker     *DockerImage  `yaml:"docker,omitempty"`
-	Libvirt    *LibvirtImage `yaml:"libvirt,omitempty"`
-	Tart       *TartImage    `yaml:"tart,omitempty"`
+	URL        string   `yaml:"url,omitempty"`
+	TokenFile  string   `yaml:"token_file,omitempty"`
+	Labels     []string `yaml:"labels"`
+	MaxRunners int      `yaml:"max_runners,omitempty"`
+	// MemoryReservation, in MiB, is what the memory budget counts for each
+	// runner when it differs from the environment's memory limit, for example
+	// to include the service containers its jobs start.
+	MemoryReservation int           `yaml:"memory_reservation,omitempty"`
+	Docker            *DockerImage  `yaml:"docker,omitempty"`
+	Libvirt           *LibvirtImage `yaml:"libvirt,omitempty"`
+	Tart              *TartImage    `yaml:"tart,omitempty"`
 }
 
 // DockerMount defines a bind mount for a Docker container.
@@ -172,14 +183,20 @@ func LoadConfig(path string) (*Config, error) {
 			}
 		}
 
-		if cfg.MemoryBudget > 0 && (runner.MemoryMB() <= 0 || runner.MemoryMB() > cfg.MemoryBudget) {
-			return nil, fmt.Errorf("runner %q: memory_budget needs a memory limit between 1 and %d MiB", name, cfg.MemoryBudget)
+		if runner.MemoryReservation < 0 {
+			return nil, fmt.Errorf("runner %q: memory_reservation must not be negative", name)
+		}
+		if cfg.MemoryBudget > 0 && (runner.ReservationMB() <= 0 || runner.ReservationMB() > cfg.MemoryBudget) {
+			return nil, fmt.Errorf("runner %q: memory_budget needs a memory limit or memory_reservation between 1 and %d MiB", name, cfg.MemoryBudget)
 		}
 
 		cfg.Runners[name] = runner
 	}
-	if cfg.MemoryBudget < 0 {
-		return nil, fmt.Errorf("memory_budget must not be negative")
+	if cfg.MemoryBudget < 0 || cfg.MemoryFloor < 0 || cfg.MemoryAging < 0 {
+		return nil, fmt.Errorf("memory_budget, memory_floor and memory_aging must not be negative")
+	}
+	if cfg.MemoryBudget == 0 && (cfg.MemoryFloor > 0 || cfg.MemoryAging > 0) {
+		return nil, fmt.Errorf("memory_floor and memory_aging need a memory_budget")
 	}
 
 	return &cfg, nil

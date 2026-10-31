@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 
 	outrunner "github.com/NetwindHQ/gha-outrunner"
 
@@ -21,6 +22,12 @@ import (
 type Provisioner struct {
 	logger *slog.Logger
 	client *client.Client
+	// procRoot and cgroupRoot are where SampleMemory reads processes and
+	// cgroups.
+	procRoot, cgroupRoot string
+
+	mu      sync.Mutex
+	sampled map[string]*sampledRunner
 }
 
 func New(logger *slog.Logger) (*Provisioner, error) {
@@ -40,8 +47,11 @@ func New(logger *slog.Logger) (*Provisioner, error) {
 	}
 
 	return &Provisioner{
-		logger: logger,
-		client: cli,
+		logger:     logger,
+		client:     cli,
+		procRoot:   "/proc",
+		cgroupRoot: "/sys/fs/cgroup",
+		sampled:    make(map[string]*sampledRunner),
 	}, nil
 }
 
@@ -112,6 +122,15 @@ func (d *Provisioner) Start(ctx context.Context, req *outrunner.RunnerRequest) e
 		return fmt.Errorf("start container: %w", err)
 	}
 
+	label, err := instanceLabel(req.JITConfig)
+	if err != nil {
+		// Only the job's service containers go unmeasured.
+		d.logger.Warn("Cannot derive the runner's container label", slog.String("name", req.Name), slog.String("error", err.Error()))
+	}
+	d.mu.Lock()
+	d.sampled[req.Name] = &sampledRunner{label: label, dirs: make(map[string]string)}
+	d.mu.Unlock()
+
 	d.logger.Info("Container started",
 		slog.String("name", req.Name),
 		slog.String("image", img),
@@ -122,6 +141,9 @@ func (d *Provisioner) Start(ctx context.Context, req *outrunner.RunnerRequest) e
 
 func (d *Provisioner) Stop(ctx context.Context, name string) error {
 	d.logger.Debug("Stopping container", slog.String("name", name))
+	d.mu.Lock()
+	delete(d.sampled, name)
+	d.mu.Unlock()
 	err := d.client.ContainerStop(ctx, name, container.StopOptions{})
 	if err != nil {
 		// Container may already be gone (AutoRemove)
