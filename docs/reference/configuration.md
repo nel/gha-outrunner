@@ -7,7 +7,9 @@ outrunner uses a YAML configuration file. Default location: `/etc/outrunner/conf
 ```yaml
 url: <string>                        # Global repository or org URL.
 token_file: <string>                 # Global path to a file containing the GitHub token.
-memory_budget: <int>                 # Optional. MiB shared by all running runners; each waits for room before provisioning. Every runner then needs a memory limit.
+memory_budget: <int>                 # Optional. MiB of reservations shared by all running runners; each waits for room before provisioning.
+memory_floor: <int>                  # Optional. MiB of the host's MemAvailable kept free when admitting a runner (Linux). Default: 0, budget only.
+memory_aging: <duration>             # Optional. How long a waiting runner may be overtaken, e.g. 10m. Default: 0, always.
 
 runners:
   <scale-set-name>:                  # The key becomes the GitHub scale set name.
@@ -15,6 +17,7 @@ runners:
     token_file: <string>             # Optional per-runner token file override.
     labels: [<string>, ...]          # Labels registered on this scale set.
     max_runners: <int>               # Optional. Defaults to --max-runners flag.
+    memory_reservation: <int>        # Optional. MiB the memory budget counts per runner. Default: the memory limit.
     docker:                          # Use Docker backend.
       image: <string>                # Docker image name or tag.
       runner_cmd: <string>           # Default: ./run.sh
@@ -79,6 +82,44 @@ Token resolution precedence:
 
 See the [Linux setup guides](../setup/linux-deb.md) for details on each method.
 
+### `memory_budget`, `memory_floor`, `memory_aging`
+
+**Optional.** Admits the runners of every scale set against one host memory
+budget, in MiB. Each runner reserves its `memory_reservation` (by default its
+memory limit, which every runner then needs) from provisioning until its
+environment is stopped, so `max_runners` can follow demand.
+
+Waiting runners are admitted in arrival order, but one that fits is admitted
+even while an older, larger one waits, so short small jobs are not held
+behind a large one. Once a runner has waited `memory_aging`, nothing that
+arrived after it is admitted until it is: it takes the next freed memory and
+cannot starve.
+
+With `memory_floor`, a runner is also admitted only if the host's
+`MemAvailable`, less the part of running runners' reservations they do not
+use now, stays above the floor after its reservation. A reservation below a
+job's real use then delays the next jobs instead of exhausting the host. A
+runner counts its whole reservation as unused until it is provisioned and
+measured. Use is measured for Docker runners (below); other runners count as
+using their whole reservation once provisioned, so only `MemAvailable` shows
+what they hold.
+
+```yaml
+memory_budget: 28672
+memory_floor: 2048
+memory_aging: 10m
+```
+
+### Memory measurement
+
+Docker runners on a cgroup v2 Linux host are measured every 5 seconds: the
+runner's container and the service containers its job starts (the Actions
+runner labels them with its instance label). When a job ends, outrunner logs
+`Runner memory peak` with `reservedMB`, `peakMB` (memory the host cannot
+reclaim: anonymous, shared, kernel and swapped) and `peakWithCacheMB` (adding
+page cache), or a warning when the peak exceeded the reservation. Use these to
+size `memory_reservation`.
+
 ## Runner Fields
 
 ### `runners.<name>`
@@ -123,6 +164,13 @@ jobs:
 ### `runners.<name>.max_runners`
 
 **Optional.** Maximum number of concurrent runners for this scale set. If not specified, defaults to the `--max-runners` CLI flag value (default: 2).
+
+### `runners.<name>.memory_reservation`
+
+**Optional.** MiB the memory budget counts for each runner of this set,
+when it should differ from the environment's memory limit: for example to
+include the service containers or the emulator its jobs start, or a measured
+peak well below the limit.
 
 ### `runners.<name>.docker`
 

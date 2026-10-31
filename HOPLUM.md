@@ -16,6 +16,7 @@ proposed upstream. Each patch lives on its own branch, merged here:
 | `docker-userns-memory` | not yet opened | Docker runners: user namespace mode and memory limit (stacked on `docker-network`) |
 | `docker-devices` | not yet opened | Docker runners: host devices and supplementary groups, e.g. /dev/kvm (stacked on `docker-userns-memory`) |
 | `memory-budget` | not yet opened | One host memory budget admits the runners of every scale set, so `max_runners` can follow demand |
+| `memory-admission` | not yet opened | Memory budget: backfill with aging, per-set reservations, a MemAvailable floor and measured job peaks (stacked on `memory-budget`) |
 
 ## Update
 

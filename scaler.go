@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -34,7 +35,7 @@ type Scaler struct {
 	// provisioned; nil admits all.
 	budget *MemoryBudget
 
-	mu     sync.Mutex
+	mu      sync.Mutex
 	runners map[string]*RunnerState
 	// assignedJobs is the latest TotalAssignedJobs from the listener, and
 	// completedSinceCount the jobs completed since it arrived. Refill after
@@ -129,6 +130,9 @@ func (s *Scaler) HandleJobStarted(ctx context.Context, jobInfo *scaleset.JobStar
 	state, exists := s.runners[jobInfo.RunnerName]
 	if exists {
 		state.Phase = RunnerRunning
+		state.job = jobInfo.JobDisplayName
+		// owner/repo/.github/workflows/file.yml@ref
+		state.workflow, _, _ = strings.Cut(jobInfo.JobWorkflowRef, "@")
 	}
 	s.mu.Unlock()
 
@@ -216,16 +220,22 @@ func (s *Scaler) runRunnerLifecycle(state *RunnerState, req *RunnerRequest) {
 	name := state.Name
 
 	// 1. Wait for host memory, held until the environment is stopped.
-	memory := req.Runner.MemoryMB()
-	if !s.budget.TryAcquire(memory) {
-		s.logger.Info("Waiting for host memory", slog.String("name", name), slog.Int("memoryMB", memory))
-		if err := s.budget.Acquire(s.lifecycleCtx, memory); err != nil {
-			s.deregisterRunner(name, state.RunnerID)
-			return
-		}
-		s.logger.Info("Host memory admitted", slog.String("name", name))
+	reservation := req.Runner.ReservationMB()
+	sampler, _ := s.provisioner.(MemorySampler)
+	waited := false
+	grant, err := s.budget.Acquire(s.lifecycleCtx, name, reservation, func() {
+		waited = true
+		s.logger.Info("Waiting for host memory", slog.String("name", name), slog.Int("memoryMB", reservation))
+	})
+	if err != nil {
+		s.deregisterRunner(name, state.RunnerID)
+		return
 	}
-	defer s.budget.Release(memory)
+	if waited {
+		s.logger.Info("Host memory admitted", slog.String("name", name),
+			slog.Duration("waited", time.Since(state.CreatedAt).Round(time.Second)))
+	}
+	defer grant.Release()
 
 	// 2. Provision
 	if err := s.provisioner.Start(s.lifecycleCtx, req); err != nil {
@@ -248,12 +258,19 @@ func (s *Scaler) runRunnerLifecycle(state *RunnerState, req *RunnerRequest) {
 	state.StartedAt = time.Now()
 	s.mu.Unlock()
 
-	// 3. Wait for completion signal or shutdown
+	// 3. Wait for completion signal or shutdown, measuring the job's memory.
+	stopSampling := s.sampleMemory(sampler, name, grant)
 	select {
 	case <-state.done:
 		s.logger.Debug("Runner signaled done", slog.String("name", name))
 	case <-s.lifecycleCtx.Done():
 		s.logger.Debug("Runner shutdown requested", slog.String("name", name))
+	}
+	if peak, measured := stopSampling(); measured {
+		s.mu.Lock()
+		job, workflow := state.job, state.workflow
+		s.mu.Unlock()
+		s.logMemoryPeak(name, job, workflow, reservation, peak)
 	}
 
 	// 4. Stop
@@ -273,6 +290,79 @@ func (s *Scaler) runRunnerLifecycle(state *RunnerState, req *RunnerRequest) {
 
 	// 5. Deregister from GitHub
 	s.deregisterRunner(name, state.RunnerID)
+}
+
+// memorySampleInterval is how often a running job's memory is measured: often
+// enough to see short peaks of a job's compilers and service containers.
+const memorySampleInterval = 5 * time.Second
+
+// sampleMemory measures the runner every memorySampleInterval until the
+// returned function is called, reporting its use to the grant. The function
+// stops sampling, takes a last sample and returns the peaks, and whether any
+// sample succeeded. A runner that cannot be measured is reported as using its
+// whole reservation, which leaves the budget's floor check to MemAvailable.
+func (s *Scaler) sampleMemory(sampler MemorySampler, name string, grant *MemoryGrant) func() (MemorySample, bool) {
+	if sampler == nil {
+		grant.Observe(grant.mib)
+		return func() (MemorySample, bool) { return MemorySample{}, false }
+	}
+	var peak MemorySample
+	measured, failed := false, false
+	sample := func() {
+		ctx, cancel := context.WithTimeout(context.Background(), memorySampleInterval)
+		defer cancel()
+		m, err := sampler.SampleMemory(ctx, name)
+		if err != nil {
+			if !measured && !failed {
+				failed = true
+				grant.Observe(grant.mib)
+				s.logger.Warn("Cannot measure runner memory", slog.String("name", name), slog.String("error", err.Error()))
+			}
+			return
+		}
+		measured = true
+		peak.ResidentMB = max(peak.ResidentMB, m.ResidentMB)
+		peak.TotalMB = max(peak.TotalMB, m.TotalMB)
+		grant.Observe(m.ResidentMB)
+	}
+	stop, done := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(memorySampleInterval)
+		defer ticker.Stop()
+		for {
+			sample()
+			select {
+			case <-stop:
+				sample()
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+	return func() (MemorySample, bool) {
+		close(stop)
+		<-done
+		return peak, measured
+	}
+}
+
+// logMemoryPeak records a finished job's memory peak beside its reservation,
+// so reservations can follow measured use.
+func (s *Scaler) logMemoryPeak(name, job, workflow string, reservation int, peak MemorySample) {
+	attrs := []any{
+		slog.String("name", name),
+		slog.String("job", job),
+		slog.String("workflow", workflow),
+		slog.Int("reservedMB", reservation),
+		slog.Int("peakMB", peak.ResidentMB),
+		slog.Int("peakWithCacheMB", peak.TotalMB),
+	}
+	if reservation > 0 && peak.ResidentMB > reservation {
+		s.logger.Warn("Runner memory peak exceeded its reservation", attrs...)
+		return
+	}
+	s.logger.Info("Runner memory peak", attrs...)
 }
 
 func (s *Scaler) removeRunner(state *RunnerState) {

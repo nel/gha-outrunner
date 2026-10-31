@@ -132,9 +132,17 @@ func run(ctx context.Context) error {
 		})
 	}
 
-	budget := outrunner.NewMemoryBudget(config.MemoryBudget)
+	budget := outrunner.NewMemoryBudget(logger.WithGroup("memory"), outrunner.MemoryBudgetConfig{
+		BudgetMB: config.MemoryBudget,
+		FloorMB:  config.MemoryFloor,
+		Aging:    config.MemoryAging,
+	})
 	if budget != nil {
-		logger.Info("Shared memory budget", slog.Int("memoryMB", config.MemoryBudget))
+		logger.Info("Shared memory budget",
+			slog.Int("memoryMB", config.MemoryBudget),
+			slog.Int("floorMB", config.MemoryFloor),
+			slog.Duration("aging", config.MemoryAging),
+		)
 	}
 
 	g, ctx := errgroup.WithContext(ctx)
